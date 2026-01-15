@@ -314,7 +314,7 @@ def process_command(commander_response: str, original_input: str, use_loop: bool
     
     # クロスチェック実行（selfモード以外、かつuse_crosscheck=True）
     crosscheck_data = None
-    if use_crosscheck and agent_type and agent_type != "coder_loop":  # ループモードは既にレビュー済み
+    if use_crosscheck and agent_type:  # 全モードでクロスチェック実行
         crosscheck_data = cross_check(agent_type, result, task)
     
     return agent_type, result, {"loop_data": loop_data, "crosscheck": crosscheck_data}
