@@ -204,34 +204,126 @@ def code_with_review_loop(requirement: str, max_iterations: int = 3) -> dict:
 
 # ==========================================
 # 処理の振り分け
+
 # ==========================================
-def process_command(commander_response: str, original_input: str, use_loop: bool) -> tuple:
-    """司令塔の指示を処理"""
+# クロスチェック機能
+# ==========================================
+def cross_check(agent_type: str, result: str, original_task: str) -> dict:
+    """
+    クロスチェック機能: 他のエージェントが結果を100点満点で採点
+    
+    Args:
+        agent_type: 実行したエージェント ("auditor", "coder", "data")
+        result: エージェントの出力結果
+        original_task: 元のタスク内容
+    
+    Returns:
+        dict: 採点結果と改善提案
+    """
+    # 実行エージェント以外の2つのエージェントでチェック
+    checkers = []
+    if agent_type != "auditor":
+        checkers.append(("auditor", get_auditor(), "👮‍♂️ 監査役(GPT-5.2 Pro)"))
+    if agent_type != "coder":
+        checkers.append(("coder", get_coder(), "👨‍💻 コード役(Claude Sonnet 4.5)"))
+    if agent_type != "data":
+        checkers.append(("data", get_data_processor(), "🦙 データ役(Llama 3.3 70B)"))
+    
+    # 最大2つのチェッカーを選択
+    checkers = checkers[:2]
+    
+    check_results = []
+    
+    for checker_type, checker_model, checker_name in checkers:
+        prompt = f"""以下の出力結果を100点満点で採点してください。
+
+【元のタスク】
+{original_task}
+
+【実行エージェントの出力】
+{result}
+
+【採点基準】
+1. 正確性 (25点): タスクの要求を正確に満たしているか
+2. 妥当性 (25点): ロジックや論理展開が妥当か
+3. セキュリティ (25点): セキュリティリスクはないか
+4. パフォーマンス (25点): 効率的で最適な実装/回答か
+
+【出力形式】
+正確性: X/25点
+妥当性: Y/25点
+セキュリティ: Z/25点
+パフォーマンス: W/25点
+合計: N/100点
+
+改善提案:
+- 具体的な改善点を箇条書きで記載
+"""
+        
+        try:
+            messages = [HumanMessage(content=prompt)]
+            response = checker_model.invoke(messages)
+            check_results.append({
+                "checker": checker_name,
+                "evaluation": response.content
+            })
+        except Exception as e:
+            check_results.append({
+                "checker": checker_name,
+                "evaluation": f"❌ 評価エラー: {str(e)}"
+            })
+    
+    return {
+        "checks": check_results,
+        "total_checkers": len(check_results)
+    }
+
+
+# ==========================================
+def process_command(commander_response: str, original_input: str, use_loop: bool, use_crosscheck: bool = True) -> tuple:
+    """司令塔の指示を処理（クロスチェック対応）"""
+    agent_type = None
+    result = None
+    loop_data = None
+    task = original_input
+    
     if "[AUDITOR]" in commander_response:
         task = commander_response.split("[AUDITOR]")[-1].strip() or original_input
-        return "auditor", call_auditor(task), None
+        agent_type = "auditor"
+        result = call_auditor(task)
     
     elif "[CODER]" in commander_response:
         task = commander_response.split("[CODER]")[-1].strip() or original_input
         if use_loop:
-            result = code_with_review_loop(task)
-            return "coder_loop", result["final_code"], result
+            loop_result = code_with_review_loop(task)
+            agent_type = "coder_loop"
+            result = loop_result["final_code"]
+            loop_data = loop_result
         else:
-            return "coder", call_coder(task), None
+            agent_type = "coder"
+            result = call_coder(task)
     
     elif "[DATA]" in commander_response:
         task = commander_response.split("[DATA]")[-1].strip() or original_input
-        return "data", call_data_processor(task), None
+        agent_type = "data"
+        result = call_data_processor(task)
     
     else:
         clean_response = commander_response.replace("[SELF]", "").strip()
         return "self", clean_response, None
+    
+    # クロスチェック実行（selfモード以外、かつuse_crosscheck=True）
+    crosscheck_data = None
+    if use_crosscheck and agent_type and agent_type != "coder_loop":  # ループモードは既にレビュー済み
+        crosscheck_data = cross_check(agent_type, result, task)
+    
+    return agent_type, result, {"loop_data": loop_data, "crosscheck": crosscheck_data}
 
 # ==========================================
 # UI
 # ==========================================
 st.title("🤖 Multi-Agent System")
-st.markdown("**2026年1月版 - ループ構造搭載**")
+st.markdown("**2026年1月版 - ループ構造 + クロスチェック搭載**")
 
 # サイドバー
 with st.sidebar:
@@ -251,6 +343,8 @@ with st.sidebar:
     st.header("⚙️ 設定")
     use_loop = st.toggle("🔄 コードレビューループ", value=True, help="ONにするとコード生成後に自動でGPTがレビューし、問題があればClaudeが修正します")
     max_loop = st.slider("最大ループ回数", 1, 5, 3) if use_loop else 1
+    
+    use_crosscheck = st.toggle("📊 クロスチェック機能", value=True, help="ONにすると他のエージェントが結果を100点満点で採点します（処理時間増加）")
     
     st.divider()
     
@@ -296,7 +390,7 @@ if prompt := st.chat_input("メッセージを入力してください..."):
         with st.spinner("🤔 Gemini司令塔が思考中..."):
             try:
                 commander_response = call_commander(prompt, st.session_state.messages)
-                agent_type, result, loop_data = process_command(commander_response, prompt, use_loop)
+                agent_type, result, loop_data = process_command(commander_response, prompt, use_loop, use_crosscheck)
                 
                 agent_info = {
                     "auditor": "👮‍♂️ 監査役(GPT-5.2 Pro)",
@@ -310,9 +404,9 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                     st.info(f"📋 {agent_info.get(agent_type, '不明')} に依頼しました")
                 
                 # ループ結果の詳細表示
-                if loop_data:
-                    with st.expander(f"🔄 ループ詳細（{loop_data['total_iterations']}回）", expanded=False):
-                        for item in loop_data["iterations"]:
+                if loop_data and loop_data.get("loop_data"):
+                    with st.expander(f"🔄 ループ詳細（{loop_data['loop_data']['total_iterations']}回）", expanded=False):
+                        for item in loop_data["loop_data"]["iterations"]:
                             if item["type"] == "code":
                                 st.markdown(f"**📝 コード生成 (v{item['iteration']})**")
                             elif item["type"] == "review":
@@ -321,6 +415,16 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                                 st.markdown(f"**🔧 修正版 (v{item['iteration']})**")
                             st.code(item["content"][:500] + "..." if len(item["content"]) > 500 else item["content"])
                             st.divider()
+                
+                # クロスチェック結果の表示
+                if loop_data and loop_data.get("crosscheck"):
+                    st.markdown("---")
+                    st.markdown("### 📊 クロスチェック結果")
+                    crosscheck = loop_data["crosscheck"]
+                    
+                    for check in crosscheck["checks"]:
+                        with st.expander(f"{check['checker']} による評価", expanded=True):
+                            st.markdown(check["evaluation"])
                 
                 st.markdown(result)
                 
