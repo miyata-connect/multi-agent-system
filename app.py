@@ -81,7 +81,11 @@ def call_auditor(plan_text: str) -> str:
         HumanMessage(content=plan_text)
     ]
     response = model.invoke(messages)
-    return response.content
+    # contentがリストの場合は文字列に変換
+    content = response.content
+    if isinstance(content, list):
+        content = " ".join([str(c) for c in content])
+    return content
 
 def call_coder(requirement_text: str) -> str:
     """コード役に依頼"""
@@ -136,7 +140,11 @@ def call_commander(user_input: str, chat_history: list) -> str:
     messages.append(HumanMessage(content=user_input))
     
     response = model.invoke(messages)
-    return response.content
+    # contentがリストの場合は文字列に変換
+    content = response.content
+    if isinstance(content, list):
+        content = " ".join([str(c) for c in content])
+    return content
 
 def process_command(commander_response: str, original_input: str) -> tuple:
     """司令塔の指示を処理"""
