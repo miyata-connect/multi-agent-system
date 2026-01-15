@@ -39,7 +39,7 @@ if GEMINI_KEY:
 def get_commander():
     """司令塔 (Gemini 2.5 Flash)"""
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-preview-05-20",
+        model="gemini-2.5-flash",
         temperature=0.5,
     )
 
