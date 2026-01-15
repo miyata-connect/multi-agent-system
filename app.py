@@ -84,7 +84,14 @@ def call_auditor(plan_text: str) -> str:
     # contentがリストの場合は文字列に変換
     content = response.content
     if isinstance(content, list):
-        content = " ".join([str(c) for c in content])
+        # 辞書形式の場合はtextを抽出
+        texts = []
+        for c in content:
+            if isinstance(c, dict) and 'text' in c:
+                texts.append(c['text'])
+            else:
+                texts.append(str(c))
+        content = " ".join(texts)
     return content
 
 def call_coder(requirement_text: str) -> str:
@@ -143,7 +150,14 @@ def call_commander(user_input: str, chat_history: list) -> str:
     # contentがリストの場合は文字列に変換
     content = response.content
     if isinstance(content, list):
-        content = " ".join([str(c) for c in content])
+        # 辞書形式の場合はtextを抽出
+        texts = []
+        for c in content:
+            if isinstance(c, dict) and 'text' in c:
+                texts.append(c['text'])
+            else:
+                texts.append(str(c))
+        content = " ".join(texts)
     return content
 
 def process_command(commander_response: str, original_input: str) -> tuple:
