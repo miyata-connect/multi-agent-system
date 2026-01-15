@@ -37,9 +37,9 @@ if GEMINI_KEY:
 # ==========================================
 @st.cache_resource
 def get_commander():
-    """司令塔 (Gemini 3 Pro)"""
+    """司令塔 (Gemini 2.5 Flash)"""
     return ChatGoogleGenerativeAI(
-        model="gemini-3-pro-preview",
+        model="gemini-2.5-flash-preview-05-20",
         temperature=0.5,
     )
 
@@ -172,7 +172,7 @@ with st.sidebar:
     st.markdown("""
     | 役割 | モデル |
     |------|--------|
-    | 👑 司令塔 | Gemini 3 Pro |
+    | 👑 司令塔 | Gemini 2.5 Flash |
     | 👮‍♂️ 監査役 | GPT-5.2 |
     | 👨‍💻 コード役 | Claude Sonnet 4.5 |
     | 🦙 データ役 | Llama 3.3 70B |
