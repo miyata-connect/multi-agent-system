@@ -140,7 +140,7 @@ def call_commander(user_input: str, chat_history: list) -> str:
 ユーザーの依頼を分析し、適切な部下を選んでタスクを実行してください。
 
 利用可能な部下:
-1. 監査役（GPT-5.2）- 計画のリスク分析、懸念点の指摘 → [AUDITOR]タグ
+1. 監査役（GPT-5.2 Pro）- 計画のリスク分析、懸念点の指摘 → [AUDITOR]タグ
 2. コード役（Claude Sonnet 4.5）- コード実装、プログラミング → [CODER]タグ
 3. データ役（Llama 3.3 70B）- データ要約、情報整理 → [DATA]タグ
 
@@ -299,7 +299,7 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                 agent_type, result, loop_data = process_command(commander_response, prompt, use_loop)
                 
                 agent_info = {
-                    "auditor": "👮‍♂️ 監査役(GPT-5.2)",
+                    "auditor": "👮‍♂️ 監査役(GPT-5.2 Pro)",
                     "coder": "👨‍💻 コード役(Claude Sonnet 4.5)",
                     "coder_loop": "👨‍💻 コード役 + 👮‍♂️ 監査役（ループ）",
                     "data": "🦙 データ役(Llama 3.3 70B)",
