@@ -39,7 +39,7 @@ def get_commander():
 
 @st.cache_resource
 def get_auditor():
-    return ChatOpenAI(model="gpt-5.2", temperature=0, api_key=OPENAI_KEY)
+    return ChatOpenAI(model="gpt-5.2-pro", temperature=0, api_key=OPENAI_KEY)
 
 @st.cache_resource
 def get_coder():
@@ -240,7 +240,7 @@ with st.sidebar:
     | 役割 | モデル |
     |------|--------|
     | 👑 司令塔 | Gemini 3 Pro |
-    | 👮‍♂️ 監査役 | GPT-5.2 |
+    | 👮‍♂️ 監査役 | GPT-5.2 Pro |
     | 👨‍💻 コード役 | Claude Sonnet 4.5 |
     | 🦙 データ役 | Llama 3.3 70B |
     """)
