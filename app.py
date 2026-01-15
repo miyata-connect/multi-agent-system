@@ -359,6 +359,30 @@ with st.sidebar:
     if st.button("🗑️ チャット履歴をクリア"):
         st.session_state.messages = []
         st.rerun()
+    
+    st.divider()
+    
+    # 点数窓（サイドバー）
+    st.header("📊 クロスチェック結果")
+    
+    if st.session_state.messages and len(st.session_state.messages) > 0:
+        last_msg = st.session_state.messages[-1]
+        if last_msg.get("role") == "assistant" and last_msg.get("crosscheck"):
+            crosscheck = last_msg["crosscheck"]
+            for check in crosscheck["checks"]:
+                st.markdown(f"**{check['checker']}**")
+                st.text_area("評価", check["evaluation"], height=200, disabled=True, key=check["checker"])
+                st.divider()
+        else:
+            st.markdown("**👮‍♂️ 監査役**")
+            st.info("待機中...")
+            st.markdown("**🦙 データ役**")
+            st.info("待機中...")
+    else:
+        st.markdown("**👮‍♂️ 監査役**")
+        st.info("待機中...")
+        st.markdown("**🦙 データ役**")
+        st.info("待機中...")
 
 # APIキーチェック
 missing_keys = []
@@ -374,6 +398,7 @@ if missing_keys:
 # チャット履歴初期化
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
 
 # チャット履歴表示
 for message in st.session_state.messages:
@@ -416,18 +441,7 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                             st.code(item["content"][:500] + "..." if len(item["content"]) > 500 else item["content"])
                             st.divider()
                 
-                # クロスチェック結果の表示（常に枠を表示）
-                st.markdown("---")
-                st.markdown("### 📊 クロスチェック結果")
-                
-                if loop_data and loop_data.get("crosscheck"):
-                    crosscheck = loop_data["crosscheck"]
-                    
-                    for check in crosscheck["checks"]:
-                        with st.expander(f"{check['checker']} による評価", expanded=True):
-                            st.markdown(check["evaluation"])
-                else:
-                    st.info("⏳ クロスチェック実行中..." if use_crosscheck else "ℹ️ クロスチェック機能がOFFです")
+
                 
                 st.markdown(result)
                 
@@ -435,7 +449,8 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                     "role": "assistant",
                     "content": result,
                     "avatar": "👑",
-                    "agent": agent_type
+                    "agent": agent_type,
+                    "crosscheck": loop_data.get("crosscheck") if loop_data else None
                 })
                 
             except Exception as e:
