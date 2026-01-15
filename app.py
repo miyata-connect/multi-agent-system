@@ -39,7 +39,7 @@ def get_commander():
 
 @st.cache_resource
 def get_auditor():
-    return ChatOpenAI(model="gpt-5.2-thinking", temperature=0, api_key=OPENAI_KEY)
+    return ChatOpenAI(model="gpt-5.2", temperature=0, api_key=OPENAI_KEY)
 
 @st.cache_resource
 def get_coder():
@@ -140,7 +140,7 @@ def call_commander(user_input: str, chat_history: list) -> str:
 ユーザーの依頼を分析し、適切な部下を選んでタスクを実行してください。
 
 利用可能な部下:
-1. 監査役（GPT-5.2 Thinking）- 計画のリスク分析、懸念点の指摘 → [AUDITOR]タグ
+1. 監査役（GPT-5.2）- 計画のリスク分析、懸念点の指摘 → [AUDITOR]タグ
 2. コード役（Claude Sonnet 4.5）- コード実装、プログラミング → [CODER]タグ
 3. データ役（Llama 3.3 70B）- データ要約、情報整理 → [DATA]タグ
 
@@ -223,7 +223,7 @@ def cross_check(agent_type: str, result: str, original_task: str) -> dict:
     # 実行エージェント以外の2つのエージェントでチェック
     checkers = []
     if agent_type != "auditor":
-        checkers.append(("auditor", get_auditor(), "👮‍♂️ 監査役(GPT-5.2 Thinking)"))
+        checkers.append(("auditor", get_auditor(), "👮‍♂️ 監査役(GPT-5.2)"))
     if agent_type != "coder":
         checkers.append(("coder", get_coder(), "👨‍💻 コード役(Claude Sonnet 4.5)"))
     if agent_type != "data":
@@ -332,7 +332,7 @@ with st.sidebar:
     | 役割 | モデル |
     |------|--------|
     | 👑 司令塔 | Gemini 3 Pro |
-    | 👮‍♂️ 監査役 | GPT-5.2 Thinking |
+    | 👮‍♂️ 監査役 | GPT-5.2 |
     | 👨‍💻 コード役 | Claude Sonnet 4.5 |
     | 🦙 データ役 | Llama 3.3 70B |
     """)
@@ -365,7 +365,7 @@ with st.sidebar:
     # 点数窓（サイドバー）
     st.header("📊 クロスチェック結果")
     
-    if st.session_state.messages and len(st.session_state.messages) > 0:
+    if "messages" in st.session_state and st.session_state.messages and len(st.session_state.messages) > 0:
         last_msg = st.session_state.messages[-1]
         if last_msg.get("role") == "assistant" and last_msg.get("crosscheck"):
             crosscheck = last_msg["crosscheck"]
@@ -418,7 +418,7 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                 agent_type, result, loop_data = process_command(commander_response, prompt, use_loop, use_crosscheck)
                 
                 agent_info = {
-                    "auditor": "👮‍♂️ 監査役(GPT-5.2 Thinking)",
+                    "auditor": "👮‍♂️ 監査役(GPT-5.2)",
                     "coder": "👨‍💻 コード役(Claude Sonnet 4.5)",
                     "coder_loop": "👨‍💻 コード役 + 👮‍♂️ 監査役（ループ）",
                     "data": "🦙 データ役(Llama 3.3 70B)",
