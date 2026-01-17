@@ -10,3 +10,8 @@ venv/
 
 # WIP shelter (do not commit)
 _WIP_SHELTER/
+
+# app DB (do not commit)
+data/app.db
+data/app.db-wal
+data/app.db-shm
