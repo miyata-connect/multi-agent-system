@@ -1,0 +1,9 @@
+
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Python venv
+venv/

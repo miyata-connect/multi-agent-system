@@ -1,14 +1,40 @@
-import os
+# app.py
+# 行数: 185行
+# Multi-Agent System メインUI（モジュール化版）
+
 import streamlit as st
-from dotenv import load_dotenv
+import uuid
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage
+# モジュールインポート
+from config import check_api_keys, GEMINI_KEY, OPENAI_KEY, ANTHROPIC_KEY, GROQ_KEY, XAI_KEY
+from agents import call_commander, call_auditor, call_coder, call_searcher, call_data_processor
+from core import code_with_review_loop, cross_check, generate_crosscheck_summary
+from failure_tracker import FailureTracker
+from failure_analyzer import FailureAnalyzer
+from learning_integrator import LearningSkillsIntegrator
+from skills_downloader import SkillsDownloader
 
-load_dotenv()
+# ==========================================
+# Failure Tracking初期化
+# ==========================================
+@st.cache_resource
+def get_failure_tracker():
+    tracker = FailureTracker()
+    return tracker
+
+@st.cache_resource
+def get_failure_analyzer():
+    tracker = get_failure_tracker()
+    return FailureAnalyzer(tracker)
+
+@st.cache_resource
+def get_learning_integrator():
+    analyzer = get_failure_analyzer()
+    return LearningSkillsIntegrator(analyzer)
+
+@st.cache_resource
+def get_skills_downloader():
+    return SkillsDownloader()
 
 # ==========================================
 # ページ設定
@@ -19,311 +45,306 @@ st.set_page_config(
     layout="wide"
 )
 
-# ==========================================
-# APIキー設定
-# ==========================================
-GEMINI_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
-GROQ_KEY = os.getenv("GROQ_API_KEY")
-
-if GEMINI_KEY:
-    os.environ["GOOGLE_API_KEY"] = GEMINI_KEY
-
-# ==========================================
-# モデル初期化
-# ==========================================
-@st.cache_resource
-def get_commander():
-    return ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0.5)
-
-@st.cache_resource
-def get_auditor():
-    return ChatOpenAI(model="gpt-5.2", temperature=0, api_key=OPENAI_KEY)
-
-@st.cache_resource
-def get_coder():
-    return ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0, api_key=ANTHROPIC_KEY)
-
-@st.cache_resource
-def get_data_processor():
-    return ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=GROQ_KEY)
-
-# ==========================================
-# ヘルパー関数
-# ==========================================
-def extract_content(response):
-    """レスポンスからテキストを抽出"""
-    content = response.content
-    if isinstance(content, list):
-        texts = []
-        for c in content:
-            if isinstance(c, dict) and 'text' in c:
-                texts.append(c['text'])
-            else:
-                texts.append(str(c))
-        return " ".join(texts)
-    return content
-
-# ==========================================
-# エージェント関数
-# ==========================================
-def call_auditor(plan_text: str) -> str:
-    """監査役に依頼"""
-    model = get_auditor()
-    messages = [
-        SystemMessage(content="あなたは冷徹な監査役です。計画に対し、技術的リスク、コスト超過リスク、実現可能性の懸念点を厳しく指摘してください。日本語で回答。"),
-        HumanMessage(content=plan_text)
-    ]
-    return extract_content(model.invoke(messages))
-
-def call_coder(requirement_text: str) -> str:
-    """コード役に依頼"""
-    model = get_coder()
-    messages = [
-        HumanMessage(content=f"あなたは世界最高峰のソフトウェアエンジニアです。要件に基づき高品質なコードを書いてください。\n\n要件:\n{requirement_text}")
-    ]
-    return extract_content(model.invoke(messages))
-
-def call_coder_fix(original_code: str, feedback: str) -> str:
-    """コード役に修正依頼"""
-    model = get_coder()
-    messages = [
-        HumanMessage(content=f"""あなたは世界最高峰のソフトウェアエンジニアです。
-以下のコードに対するレビュー指摘を受けて、修正版を作成してください。
-
-【元のコード】
-{original_code}
-
-【レビュー指摘】
-{feedback}
-
-修正版のコードを出力してください。""")
-    ]
-    return extract_content(model.invoke(messages))
-
-def call_code_review(code: str) -> dict:
-    """監査役にコードレビュー依頼"""
-    model = get_auditor()
-    messages = [
-        SystemMessage(content="""あなたは厳格なコードレビュアーです。
-コードを分析し、以下の形式で回答してください：
-
-【判定】OK または 要修正
-【問題点】（要修正の場合のみ）具体的な問題点を列挙
-【推奨修正】（要修正の場合のみ）修正方法の提案
-
-バグ、セキュリティ問題、エッジケース未対応、パフォーマンス問題を重点的にチェックしてください。
-日本語で回答。"""),
-        HumanMessage(content=f"以下のコードをレビューしてください：\n\n{code}")
-    ]
-    review = extract_content(model.invoke(messages))
-    
-    # 判定を抽出
-    is_ok = "【判定】OK" in review or "判定】OK" in review
-    return {"approved": is_ok, "feedback": review}
-
-def call_data_processor(text_data: str) -> str:
-    """データ役に依頼"""
-    model = get_data_processor()
-    messages = [
-        SystemMessage(content="あなたは優秀なデータ処理係です。テキストを分析し、重要なポイントを要約して整理してください。日本語で回答。"),
-        HumanMessage(content=text_data)
-    ]
-    return extract_content(model.invoke(messages))
-
-def call_commander(user_input: str, chat_history: list) -> str:
-    """司令塔に依頼（タスク振り分け）"""
-    model = get_commander()
-    
-    system_prompt = """あなたは優秀なプロジェクトマネージャー（司令塔）です。
-ユーザーの依頼を分析し、適切な部下を選んでタスクを実行してください。
-
-利用可能な部下:
-1. 監査役（GPT-5.2）- 計画のリスク分析、懸念点の指摘 → [AUDITOR]タグ
-2. コード役（Claude Sonnet 4.5）- コード実装、プログラミング → [CODER]タグ
-3. データ役（Llama 3.3 70B）- データ要約、情報整理 → [DATA]タグ
-
-回答形式:
-- 部下を使う場合: [AUDITOR], [CODER], [DATA]のいずれかのタグと依頼内容を返す
-- 自分で回答する場合: [SELF]タグと回答を返す
-
-コードを書く依頼の場合は必ず[CODER]を使ってください。"""
-
-    messages = [SystemMessage(content=system_prompt)]
-    for msg in chat_history[-6:]:
-        if msg["role"] == "user":
-            messages.append(HumanMessage(content=msg["content"]))
-        else:
-            messages.append(SystemMessage(content=msg["content"]))
-    messages.append(HumanMessage(content=user_input))
-    
-    return extract_content(model.invoke(messages))
-
-# ==========================================
-# ループ構造：コード生成→レビュー→修正
-# ==========================================
-def code_with_review_loop(requirement: str, max_iterations: int = 3) -> dict:
-    """コード生成→レビュー→修正のループ"""
-    iterations = []
-    
-    # 初回コード生成
-    st.write("**🔄 ループ1: コード生成中...**")
-    code = call_coder(requirement)
-    iterations.append({"type": "code", "content": code, "iteration": 1})
-    
-    for i in range(max_iterations):
-        # レビュー
-        st.write(f"**🔄 ループ{i+1}: コードレビュー中...**")
-        review = call_code_review(code)
-        iterations.append({"type": "review", "content": review["feedback"], "iteration": i+1})
-        
-        if review["approved"]:
-            st.success(f"✅ レビュー通過！（{i+1}回目）")
-            return {
-                "final_code": code,
-                "iterations": iterations,
-                "approved": True,
-                "total_iterations": i + 1
-            }
-        
-        # 修正が必要
-        if i < max_iterations - 1:
-            st.warning(f"⚠️ 要修正（{i+1}回目）→ 修正中...")
-            code = call_coder_fix(code, review["feedback"])
-            iterations.append({"type": "fix", "content": code, "iteration": i+2})
-    
-    # 最大回数到達
-    st.warning(f"⚠️ 最大{max_iterations}回のループ完了。最終版を返します。")
-    return {
-        "final_code": code,
-        "iterations": iterations,
-        "approved": False,
-        "total_iterations": max_iterations
+# カスタムCSS（赤枠を緑枠に変更）
+st.markdown("""
+<style>
+    /* チャット入力欄全体 - 完全に上書き */
+    div[data-testid="stChatInput"],
+    div[data-testid="stChatInput"] > *,
+    div[data-testid="stChatInput"] > * > *,
+    div[data-testid="stChatInput"] > * > * > *,
+    div[data-testid="stChatInput"] > * > * > * > *,
+    div[data-testid="stChatInput"] div,
+    div[data-testid="stChatInput"] form,
+    div[data-testid="stChatInput"] textarea,
+    div[data-testid="stChatInput"] [data-baseweb],
+    div[data-testid="stChatInput"] [class*="st-"] {
+        background: #0e1117 !important;
+        background-color: #0e1117 !important;
     }
+    
+    div[data-testid="stChatInput"] {
+        border: 2px solid #10b981 !important;
+        border-radius: 26px !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
+        outline: none !important;
+    }
+    
+    /* デフォルトの赤枠を完全に無効化 */
+    div[data-testid="stChatInput"]::before,
+    div[data-testid="stChatInput"]::after,
+    div[data-testid="stChatInput"] *::before,
+    div[data-testid="stChatInput"] *::after {
+        display: none !important;
+        border: none !important;
+    }
+    
+    div[data-testid="stChatInput"] > div,
+    div[data-testid="stChatInput"] form,
+    div[data-testid="stChatInput"] [data-baseweb] {
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* 送信ボタンの背景 */
+    div[data-testid="stChatInput"] button {
+        background: #10b981 !important;
+        background-color: #10b981 !important;
+        border-radius: 50% !important;
+    }
+    
+    /* フォーカス時 */
+    div[data-testid="stChatInput"]:focus-within {
+        border-color: #059669 !important;
+        box-shadow: 0 0 0 1px #059669 !important;
+    }
+    
+    /* テキストエリアのフォーカス時 */
+    div[data-testid="stChatInput"] textarea:focus {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* クロスチェックカード */
+    .crosscheck-card {
+        background: #1e1e1e;
+        border: 1px solid #374151;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+    }
+    .crosscheck-card h4 {
+        color: #10b981;
+        margin: 0 0 8px 0;
+        font-size: 0.9rem;
+    }
+    .crosscheck-score {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    .score-high { color: #10b981; }
+    .score-mid { color: #f59e0b; }
+    .score-low { color: #ef4444; }
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 処理の振り分け
-
-# ==========================================
-# クロスチェック機能
-# ==========================================
-def cross_check(agent_type: str, result: str, original_task: str) -> dict:
-    """
-    クロスチェック機能: 他のエージェントが結果を100点満点で採点
-    
-    Args:
-        agent_type: 実行したエージェント ("auditor", "coder", "data")
-        result: エージェントの出力結果
-        original_task: 元のタスク内容
-    
-    Returns:
-        dict: 採点結果と改善提案
-    """
-    # 実行エージェント以外の2つのエージェントでチェック
-    checkers = []
-    if agent_type != "auditor":
-        checkers.append(("auditor", get_auditor(), "👮‍♂️ 監査役(GPT-5.2)"))
-    if agent_type != "coder":
-        checkers.append(("coder", get_coder(), "👨‍💻 コード役(Claude Sonnet 4.5)"))
-    if agent_type != "data":
-        checkers.append(("data", get_data_processor(), "🦙 データ役(Llama 3.3 70B)"))
-    
-    # 最大2つのチェッカーを選択
-    checkers = checkers[:2]
-    
-    check_results = []
-    
-    for checker_type, checker_model, checker_name in checkers:
-        prompt = f"""以下の出力結果を100点満点で採点してください。
-
-【元のタスク】
-{original_task}
-
-【実行エージェントの出力】
-{result}
-
-【採点基準】
-1. 正確性 (25点): タスクの要求を正確に満たしているか
-2. 妥当性 (25点): ロジックや論理展開が妥当か
-3. セキュリティ (25点): セキュリティリスクはないか
-4. パフォーマンス (25点): 効率的で最適な実装/回答か
-
-【出力形式】
-正確性: X/25点
-妥当性: Y/25点
-セキュリティ: Z/25点
-パフォーマンス: W/25点
-合計: N/100点
-
-改善提案:
-- 具体的な改善点を箇条書きで記載
-"""
-        
-        try:
-            messages = [HumanMessage(content=prompt)]
-            response = checker_model.invoke(messages)
-            check_results.append({
-                "checker": checker_name,
-                "evaluation": response.content
-            })
-        except Exception as e:
-            check_results.append({
-                "checker": checker_name,
-                "evaluation": f"❌ 評価エラー: {str(e)}"
-            })
-    
-    return {
-        "checks": check_results,
-        "total_checkers": len(check_results)
-    }
-
-
 # ==========================================
 def process_command(commander_response: str, original_input: str, use_loop: bool, use_crosscheck: bool = True) -> tuple:
-    """司令塔の指示を処理（クロスチェック対応）"""
+    """司令塔の指示を処理（クロスチェック対応 + 失敗記録）"""
     agent_type = None
     result = None
     loop_data = None
     task = original_input
+    execution_id = str(uuid.uuid4())
+    tracker = get_failure_tracker()
     
-    if "[AUDITOR]" in commander_response:
-        task = commander_response.split("[AUDITOR]")[-1].strip() or original_input
-        agent_type = "auditor"
-        result = call_auditor(task)
+    agent_role_map = {
+        "auditor": "監査役",
+        "coder": "コード役",
+        "coder_loop": "コード役(ループ)",
+        "data": "データ役",
+        "searcher": "検索役"
+    }
     
-    elif "[CODER]" in commander_response:
-        task = commander_response.split("[CODER]")[-1].strip() or original_input
-        if use_loop:
-            loop_result = code_with_review_loop(task)
-            agent_type = "coder_loop"
-            result = loop_result["final_code"]
-            loop_data = loop_result
+    try:
+        if "[AUDITOR]" in commander_response:
+            task = commander_response.split("[AUDITOR]")[-1].strip() or original_input
+            agent_type = "auditor"
+            result = call_auditor(task)
+        
+        elif "[CODER]" in commander_response:
+            task = commander_response.split("[CODER]")[-1].strip() or original_input
+            if use_loop:
+                loop_result = code_with_review_loop(task)
+                agent_type = "coder_loop"
+                result = loop_result["final_code"]
+                loop_data = loop_result
+            else:
+                agent_type = "coder"
+                result = call_coder(task)
+        
+        elif "[DATA]" in commander_response:
+            task = commander_response.split("[DATA]")[-1].strip() or original_input
+            agent_type = "data"
+            result = call_data_processor(task)
+        
+        elif "[SEARCH]" in commander_response:
+            task = commander_response.split("[SEARCH]")[-1].strip() or original_input
+            agent_type = "searcher"
+            result = call_searcher(task)
+        
         else:
-            agent_type = "coder"
-            result = call_coder(task)
-    
-    elif "[DATA]" in commander_response:
-        task = commander_response.split("[DATA]")[-1].strip() or original_input
-        agent_type = "data"
-        result = call_data_processor(task)
-    
-    else:
-        clean_response = commander_response.replace("[SELF]", "").strip()
-        return "self", clean_response, None
-    
-    # クロスチェック実行（selfモード以外、かつuse_crosscheck=True）
-    crosscheck_data = None
-    if use_crosscheck and agent_type:  # 全モードでクロスチェック実行
-        crosscheck_data = cross_check(agent_type, result, task)
-    
-    return agent_type, result, {"loop_data": loop_data, "crosscheck": crosscheck_data}
+            clean_response = commander_response.replace("[SELF]", "").strip()
+            return "self", clean_response, None
+        
+        # 成功を記録
+        tracker.record_execution(
+            execution_id=execution_id,
+            agent_name=agent_role_map.get(agent_type, agent_type),
+            role=agent_type,
+            task_description=task[:200],
+            status='success'
+        )
+        
+        # クロスチェック実行
+        crosscheck_data = None
+        if use_crosscheck and agent_type:
+            crosscheck_data = cross_check(agent_type, result, task)
+            if crosscheck_data and crosscheck_data["checks"]:
+                summary = generate_crosscheck_summary(crosscheck_data["checks"])
+                crosscheck_data["summary"] = summary
+        
+        return agent_type, result, {"loop_data": loop_data, "crosscheck": crosscheck_data}
+        
+    except Exception as e:
+        # 失敗を記録
+        if agent_type:
+            tracker.record_execution(
+                execution_id=execution_id,
+                agent_name=agent_role_map.get(agent_type, agent_type),
+                role=agent_type,
+                task_description=task[:200] if task else original_input[:200],
+                status='failed',
+                error_message=str(e),
+                error_type=type(e).__name__
+            )
+        raise
 
 # ==========================================
 # UI
 # ==========================================
-st.title("🤖 Multi-Agent System")
-st.markdown("**2026年1月版 - ループ構造 + クロスチェック搭載**")
+# カスタムCSS（タイトルをコンパクトに）
+st.markdown("""
+<style>
+    /* タイトルエリアを小さく */
+    h1 {
+        font-size: 1.5rem !important;
+        margin-top: 0 !important;
+        margin-bottom: 0.5rem !important;
+        padding-top: 0.5rem !important;
+    }
+    
+    /* サブタイトルを小さく */
+    .stMarkdown p {
+        font-size: 0.8rem !important;
+        margin-top: 0 !important;
+        margin-bottom: 0.5rem !important;
+        color: #9ca3af !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 上部余白を削除するCSS
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 0rem !important;
+        margin-top: 0rem !important;
+        padding-left: 1.5rem !important;
+    }
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    /* サイドバー上部余白完全削除 */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] > div,
+    [data-testid="stSidebar"] > div > div,
+    [data-testid="stSidebar"] > div > div > div,
+    [data-testid="stSidebarContent"],
+    [data-testid="stSidebarUserContent"],
+    section[data-testid="stSidebar"],
+    section[data-testid="stSidebar"] > div {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    /* サイドバー内のブロック間隔 */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
+        padding-top: 0 !important;
+    }
+    /* サイドバー全体を上に移動 */
+    section[data-testid="stSidebar"] > div {
+        margin-top: -3rem !important;
+        padding-top: 0 !important;
+    }
+    section[data-testid="stSidebar"] > div > div {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    section[data-testid="stSidebar"] > div > div > div {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# メインレイアウト: 左=クロスチェック結果, 右=チャット
+col_crosscheck, col_chat = st.columns([1, 2])
+
+# 左カラム: クロスチェック結果パネル
+with col_crosscheck:
+    st.markdown('<div style="font-size: 1.2rem; font-weight: bold; margin-top: -0.3rem; margin-bottom: 1rem;">📊 クロスチェック結果</div>', unsafe_allow_html=True)
+    
+    # セッションに保存されたクロスチェック結果を表示
+    if "last_crosscheck" in st.session_state and st.session_state.last_crosscheck:
+        crosscheck = st.session_state.last_crosscheck
+        
+        # 総合判定
+        if "summary" in crosscheck:
+            st.success(crosscheck["summary"])
+        
+        # 各AIの評価カード（横2列表示）
+        checks = crosscheck.get("checks", [])
+        for i in range(0, len(checks), 2):
+            cols = st.columns(2)
+            for j, col in enumerate(cols):
+                if i + j < len(checks):
+                    check = checks[i + j]
+                    checker = check.get("checker", "不明")
+                    evaluation = check.get("evaluation", "")
+                    
+                    # スコア抽出
+                    import re
+                    score_match = re.search(r'(\d{1,3})\s*[/点分]', evaluation)
+                    score = int(score_match.group(1)) if score_match else None
+                    
+                    if score is not None:
+                        if score >= 80:
+                            score_color = "#10b981"
+                        elif score >= 60:
+                            score_color = "#f59e0b"
+                        else:
+                            score_color = "#ef4444"
+                        score_display = f'<span style="color:{score_color};font-size:1.1rem;font-weight:bold;">{score}点</span>'
+                    else:
+                        score_display = "-"
+                    
+                    with col:
+                        st.markdown(f"""
+                        <div class="crosscheck-card">
+                            <h4>{checker}</h4>
+                            <div>採点: {score_display}</div>
+                            <div style="font-size:0.8rem;color:#9ca3af;margin-top:6px;white-space:pre-wrap;max-height:120px;overflow-y:auto;">{evaluation[:150]}{'...' if len(evaluation) > 150 else ''}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+    else:
+        st.info("待機中... メッセージを送信するとクロスチェック結果が表示されます")
+
+# 右カラム: チャットエリア
+with col_chat:
+    st.markdown("""
+    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-bottom: 1rem; margin-right: -1rem;">
+        <span style="font-size: 1.5rem;">🤖</span>
+        <div>
+            <div style="font-size: 1.2rem; font-weight: bold; line-height: 1.2;">Multi-Agent System</div>
+            <div style="font-size: 0.7rem; color: #6b7280;">2026年1月版 - モジュール化 + 5AI協働システム</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # サイドバー
 with st.sidebar:
@@ -331,20 +352,19 @@ with st.sidebar:
     st.markdown("""
     | 役割 | モデル |
     |------|--------|
-    | 👑 司令塔 | Gemini 3 Pro |
-    | 👮‍♂️ 監査役 | GPT-5.2 |
+    | 👑 コンシェルジュ | Gemini 3 Pro |
+    | 👮‍♂️ 監査・レビュー | GPT-5.2 |
     | 👨‍💻 コード役 | Claude Sonnet 4.5 |
     | 🦙 データ役 | Llama 3.3 70B |
+    | 🔍 検索役 | Grok 4.1 Thinking |
     """)
     
     st.divider()
     
-    # ループ構造ON/OFF
     st.header("⚙️ 設定")
     use_loop = st.toggle("🔄 コードレビューループ", value=True, help="ONにするとコード生成後に自動でGPTがレビューし、問題があればClaudeが修正します")
     max_loop = st.slider("最大ループ回数", 1, 5, 3) if use_loop else 1
-    
-    use_crosscheck = st.toggle("📊 クロスチェック機能", value=True, help="ONにすると他のエージェントが結果を100点満点で採点します（処理時間増加）")
+    use_crosscheck = st.toggle("📊 クロスチェック機能", value=False, help="ONにすると全AIが結果を採点（重要なタスク時のみ推奨）")
     
     st.divider()
     
@@ -353,44 +373,78 @@ with st.sidebar:
     st.markdown(f"- OpenAI: {'✅' if OPENAI_KEY else '❌'}")
     st.markdown(f"- Anthropic: {'✅' if ANTHROPIC_KEY else '❌'}")
     st.markdown(f"- Groq: {'✅' if GROQ_KEY else '❌'}")
+    st.markdown(f"- xAI (Grok): {'✅' if XAI_KEY else '❌'}")
     
     st.divider()
     
-    if st.button("🗑️ チャット履歴をクリア"):
-        st.session_state.messages = []
-        st.rerun()
+    # 失敗透明性レポート
+    st.header("📊 システム透明性")
+    try:
+        tracker = get_failure_tracker()
+        stats_24h = tracker.get_failure_rate(24)
+        stats_7d = tracker.get_failure_rate(168)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("24時間失敗率", f"{stats_24h['failure_rate']}%")
+        with col2:
+            st.metric("7日間失敗率", f"{stats_7d['failure_rate']}%")
+        
+        st.caption(f"総実行回数（24時間）: {stats_24h['total_executions']}回")
+        
+        if stats_24h['total_executions'] > 0:
+            analyzer = get_failure_analyzer()
+            top_failures = analyzer.get_top_failure_reasons(3)
+            if top_failures:
+                st.write("**主な失敗:**")
+                for f in top_failures:
+                    st.text(f"• {f['error_type']}: {f['occurrence_count']}回")
+    except Exception as e:
+        st.caption("データ準備中...")
     
     st.divider()
     
-    # 点数窓（サイドバー）
-    st.header("📊 クロスチェック結果")
+    # Skillsダウンロード・管理
+    st.header("📚 Skillsライブラリ")
+    try:
+        downloader = get_skills_downloader()
+        stats = downloader.get_stats()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("ダウンロード済", f"{stats['total_downloaded_skills']}件")
+        with col2:
+            st.metric("使用回数", f"{stats['total_usages']}回")
+        
+        if stats['total_usages'] > 0:
+            st.caption(f"成功率: {stats['success_rate']}% / 品質: {stats['avg_quality_score']}点")
+        
+        # ダウンロードUI
+        with st.expander("🔽 Skills検索・ダウンロード", expanded=False):
+            search_query = st.text_input("検索キーワード", placeholder="日本語OK！例: 認証処理, langchain, error handling")
+            download_count = st.slider("ダウンロード数", 5, 50, 10)
+            
+            if st.button("🔍 GitHubからSkillsを取得", use_container_width=True):
+                with st.spinner(f"GitHubでSKILL.mdを検索中..."):
+                    downloaded = downloader.smart_batch_download(search_query, max_skills=download_count)
+                    if downloaded:
+                        st.success(f"✅ {len(downloaded)}件のSkillsをダウンロードしました")
+                    else:
+                        st.info("新規Skillsは見つかりませんでした")
+        
+        # 人気Skills表示
+        top_skills = downloader.get_top_skills(limit=3)
+        if top_skills:
+            st.write("🏆 よく使うSkills:")
+            for s in top_skills:
+                st.text(f"• {s['skill_name']} ({s['usage_count']}回)")
+    except Exception as e:
+        st.caption("Skillsデータ準備中...")
     
-    if "messages" in st.session_state and st.session_state.messages and len(st.session_state.messages) > 0:
-        last_msg = st.session_state.messages[-1]
-        if last_msg.get("role") == "assistant" and last_msg.get("crosscheck"):
-            crosscheck = last_msg["crosscheck"]
-            for check in crosscheck["checks"]:
-                st.markdown(f"**{check['checker']}**")
-                st.text_area("評価", check["evaluation"], height=200, disabled=True, key=check["checker"])
-                st.divider()
-        else:
-            st.markdown("**👮‍♂️ 監査役**")
-            st.info("待機中...")
-            st.markdown("**🦙 データ役**")
-            st.info("待機中...")
-    else:
-        st.markdown("**👮‍♂️ 監査役**")
-        st.info("待機中...")
-        st.markdown("**🦙 データ役**")
-        st.info("待機中...")
+
 
 # APIキーチェック
-missing_keys = []
-if not GEMINI_KEY: missing_keys.append("GEMINI_API_KEY")
-if not OPENAI_KEY: missing_keys.append("OPENAI_API_KEY")
-if not ANTHROPIC_KEY: missing_keys.append("ANTHROPIC_API_KEY")
-if not GROQ_KEY: missing_keys.append("GROQ_API_KEY")
-
+missing_keys = check_api_keys()
 if missing_keys:
     st.error(f"❌ 以下のAPIキーが設定されていません: {', '.join(missing_keys)}")
     st.stop()
@@ -398,7 +452,6 @@ if missing_keys:
 # チャット履歴初期化
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
 
 # チャット履歴表示
 for message in st.session_state.messages:
@@ -422,6 +475,7 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                     "coder": "👨‍💻 コード役(Claude Sonnet 4.5)",
                     "coder_loop": "👨‍💻 コード役 + 👮‍♂️ 監査役（ループ）",
                     "data": "🦙 データ役(Llama 3.3 70B)",
+                    "searcher": "🔍 検索役(Grok 4.1 Thinking)",
                     "self": "👑 司令塔(Gemini 3 Pro)"
                 }
                 
@@ -441,9 +495,13 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                             st.code(item["content"][:500] + "..." if len(item["content"]) > 500 else item["content"])
                             st.divider()
                 
-
-                
                 st.markdown(result)
+                
+                # クロスチェック結果をセッション状態に保存
+                need_rerun = False
+                if loop_data and loop_data.get("crosscheck"):
+                    st.session_state.last_crosscheck = loop_data["crosscheck"]
+                    need_rerun = True
                 
                 st.session_state.messages.append({
                     "role": "assistant",
@@ -452,6 +510,9 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                     "agent": agent_type,
                     "crosscheck": loop_data.get("crosscheck") if loop_data else None
                 })
+                
+                if need_rerun:
+                    st.rerun()
                 
             except Exception as e:
                 st.error(f"❌ エラー: {str(e)}")
