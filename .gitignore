@@ -1,4 +1,3 @@
-
 .env
 .env.*
 
@@ -15,3 +14,8 @@ _WIP_SHELTER/
 data/app.db
 data/app.db-wal
 data/app.db-shm
+
+# local backups / handoff outputs (do not commit)
+*.bak_*
+handoff_project.txt
+handoff_keyfiles.txt
