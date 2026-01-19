@@ -11,6 +11,11 @@ from config import (
     AI_MODELS, DEFAULT_TEAM_CONFIG, get_team_config, set_team_config, reset_team_config
 )
 from agents import call_commander, call_auditor, call_coder, call_searcher, call_data_processor
+from agents.coder_team import CoderTeam
+from agents.auditor_team import AuditorTeam
+from agents.data_team import DataTeam
+from agents.searcher_team import SearcherTeam
+from agents.concierge import Concierge
 from core import code_with_review_loop, cross_check, generate_crosscheck_summary
 from failure_tracker import FailureTracker
 from failure_analyzer import FailureAnalyzer
@@ -319,7 +324,7 @@ div[data-testid="stChatInput"] > div {
 # 処理の振り分け
 # ==========================================
 def process_command(commander_response: str, original_input: str, use_loop: bool, use_crosscheck: bool = True) -> tuple:
-    """司令塔の指示を処理（クロスチェック対応 + 失敗記録）"""
+    """司令塔の指示を処理（3AI協働チーム対応版）"""
     agent_type = None
     result = None
     loop_data = None
@@ -328,39 +333,49 @@ def process_command(commander_response: str, original_input: str, use_loop: bool
     tracker = get_failure_tracker()
     
     agent_role_map = {
-        "auditor": "監査役",
-        "coder": "コード役",
-        "coder_loop": "コード役(ループ)",
-        "data": "データ役",
-        "searcher": "検索役"
+        "auditor": "監査チーム",
+        "coder": "コーディングチーム",
+        "coder_loop": "コーディングチーム(ループ)",
+        "data": "データ処理チーム",
+        "searcher": "検索チーム"
     }
     
     try:
         if "[AUDITOR]" in commander_response:
             task = commander_response.split("[AUDITOR]")[-1].strip() or original_input
             agent_type = "auditor"
-            result = call_auditor(task)
+            # 3AI協働: AuditorTeam
+            team = AuditorTeam()
+            team_result = team.run(task)
+            result = team_result["final_result"]
+            loop_data = {"team_info": team_result.get("team"), "scores": team_result.get("scores")}
         
         elif "[CODER]" in commander_response:
             task = commander_response.split("[CODER]")[-1].strip() or original_input
-            if use_loop:
-                loop_result = code_with_review_loop(task)
-                agent_type = "coder_loop"
-                result = loop_result["final_code"]
-                loop_data = loop_result
-            else:
-                agent_type = "coder"
-                result = call_coder(task)
+            agent_type = "coder"
+            # 3AI協働: CoderTeam
+            team = CoderTeam()
+            team_result = team.run(task)
+            result = team_result["final_result"]
+            loop_data = {"team_info": team_result.get("team"), "scores": team_result.get("scores")}
         
         elif "[DATA]" in commander_response:
             task = commander_response.split("[DATA]")[-1].strip() or original_input
             agent_type = "data"
-            result = call_data_processor(task)
+            # 3AI協働: DataTeam
+            team = DataTeam()
+            team_result = team.run(task)
+            result = team_result["final_result"]
+            loop_data = {"team_info": team_result.get("team"), "scores": team_result.get("scores")}
         
         elif "[SEARCH]" in commander_response:
             task = commander_response.split("[SEARCH]")[-1].strip() or original_input
             agent_type = "searcher"
-            result = call_searcher(task)
+            # 3AI協働: SearcherTeam
+            team = SearcherTeam()
+            team_result = team.run(task)
+            result = team_result["final_result"]
+            loop_data = {"team_info": team_result.get("team"), "scores": team_result.get("scores")}
         
         else:
             clean_response = commander_response.replace("[SELF]", "").strip()
@@ -375,11 +390,14 @@ def process_command(commander_response: str, original_input: str, use_loop: bool
             status='success'
         )
         
-        # クロスチェック実行
+        # クロスチェック実行（チームのscoresを使用）
         crosscheck_data = None
-        if use_crosscheck and agent_type:
-            crosscheck_data = cross_check(agent_type, result, task)
-            if crosscheck_data and crosscheck_data["checks"]:
+        if use_crosscheck and agent_type and loop_data:
+            crosscheck_data = {
+                "checks": loop_data.get("scores", []),
+                "team": loop_data.get("team_info", {})
+            }
+            if crosscheck_data["checks"]:
                 summary = generate_crosscheck_summary(crosscheck_data["checks"])
                 crosscheck_data["summary"] = summary
         
@@ -757,16 +775,32 @@ if prompt := st.chat_input("メッセージを入力してください..."):
                 agent_type, result, loop_data = process_command(commander_response, prompt, use_loop, use_crosscheck)
                 
                 agent_info = {
-                    "auditor": "👮‍♂️ 監査役(GPT-5.2)",
-                    "coder": "👨‍💻 コード役(Claude Sonnet 4.5)",
-                    "coder_loop": "👨‍💻 コード役 + 👮‍♂️ 監査役（ループ）",
-                    "data": "🦙 データ役(Llama 3.3 70B)",
-                    "searcher": "🔍 検索役(Grok 4.1 Thinking)",
+                    "auditor": "👮‍♂️ 監査チーム（3AI協働）",
+                    "coder": "👨‍💻 コーディングチーム（3AI協働）",
+                    "coder_loop": "👨‍💻 コーディングチーム（3AI協働）",
+                    "data": "🦙 データ処理チーム（3AI協働）",
+                    "searcher": "🔍 検索チーム（3AI協働）",
                     "self": "👑 司令塔(Gemini 3 Pro)"
                 }
                 
                 if agent_type != "self":
                     st.info(f"📋 {agent_info.get(agent_type, '不明')} に依頼しました")
+                    
+                    # チーム詳細表示
+                    if loop_data and loop_data.get("team_info"):
+                        team_info = loop_data["team_info"]
+                        with st.expander("👥 チーム構成", expanded=False):
+                            st.markdown(f"""
+                            - **👑 長**: {team_info.get('leader', '-')}
+                            - **🔨 作成役**: {team_info.get('creator', '-')}
+                            - **🔍 チェック役**: {team_info.get('checker', '-')}
+                            """)
+                            
+                            # チェック役の評価
+                            if loop_data.get("scores"):
+                                st.markdown("**チェック役の評価:**")
+                                for score in loop_data["scores"]:
+                                    st.markdown(f"- {score.get('checker', '-')}: {score.get('evaluation', '-')[:200]}...")
                 
                 # ループ結果の詳細表示
                 if loop_data and loop_data.get("loop_data"):
