@@ -1,8 +1,91 @@
 from __future__ import annotations
 
+import json
+from typing import Optional
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 from core.artifact_store import ArtifactStore
+
+
+def _try_decode_text(data: bytes, mime_type: str) -> Optional[str]:
+    mt = (mime_type or "").lower()
+
+    text_like = (
+        mt.startswith("text/")
+        or mt in ("application/json", "application/xml", "application/javascript")
+        or mt.endswith("+json")
+        or mt.endswith("+xml")
+    )
+
+    if not text_like:
+        return None
+
+    try:
+        return data.decode("utf-8")
+    except Exception:
+        try:
+            return data.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+
+
+def _clipboard_button(label: str, text: str, key: str) -> None:
+    payload = json.dumps(text)
+    html = f"""
+<div style="display:flex; gap:8px; align-items:center;">
+  <button id="{key}" style="
+    border-radius:9999px;
+    padding:6px 12px;
+    border:1px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.04);
+    color:inherit;
+    cursor:pointer;
+    font-size:12px;
+    line-height:1;
+  ">{label}</button>
+  <span id="{key}_status" style="font-size:12px; opacity:0.70;"></span>
+</div>
+<script>
+(() => {{
+  const btn = document.getElementById({json.dumps(key)});
+  const status = document.getElementById({json.dumps(key + "_status")});
+  if (!btn) return;
+
+  const setStatus = (msg) => {{
+    if (!status) return;
+    status.textContent = msg || "";
+    if (msg) {{
+      setTimeout(() => {{ status.textContent = ""; }}, 1200);
+    }}
+  }};
+
+  btn.addEventListener("click", async () => {{
+    try {{
+      await navigator.clipboard.writeText({payload});
+      setStatus("copied");
+    }} catch (e) {{
+      try {{
+        const ta = document.createElement("textarea");
+        ta.value = {payload};
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setStatus("copied");
+      }} catch (e2) {{
+        setStatus("blocked");
+      }}
+    }}
+  }});
+}})();
+</script>
+"""
+    components.html(html, height=38)
 
 
 def render_upload_panel(artifact_store: ArtifactStore, conversation_id: str) -> None:
@@ -16,8 +99,8 @@ def render_upload_panel(artifact_store: ArtifactStore, conversation_id: str) -> 
 
 .upload-composer-wrap {
     border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 9999px;
-    padding: 10px 12px;
+    border-radius: 12px;
+    padding: 12px;
     background: rgba(255, 255, 255, 0.04);
 }
 
@@ -36,6 +119,16 @@ def render_upload_panel(artifact_store: ArtifactStore, conversation_id: str) -> 
     display: flex;
     gap: 10px;
     align-items: flex-end;
+}
+
+/* サイドバー内カラム重なり防止 */
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+    min-width: 0 !important;
+}
+[data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > div {
+    min-width: 0 !important;
+    overflow: hidden !important;
 }
 
 .upload-composer-tools {
@@ -105,62 +198,47 @@ div[data-testid="stFileUploader"] section {
         unsafe_allow_html=True,
     )
 
-    st.divider()
     st.header("📎 添付（アップロード）")
     st.caption("会話に紐づけて保存します。GitHub退避で永続化してください。")
 
-    # -----------------------------
-    # ChatGPT-like composer state
-    # -----------------------------
     show_uploader_key = "upload_panel_show_uploader"
     if show_uploader_key not in st.session_state:
         st.session_state[show_uploader_key] = True
 
-    # -----------------------------
-    # Composer UI (ChatGPT-like)
-    # -----------------------------
-    st.markdown('<div class="upload-composer-wrap">', unsafe_allow_html=True)
-    st.markdown('<div class="upload-composer-hint">質問してみましょう</div>', unsafe_allow_html=True)
+    st.caption("質問してみましょう")
+    st.write("")  # スペース
 
-    cols = st.columns([0.16, 0.68, 0.16], gap="small")
+    # 1行目: テキストエリア（全幅）
+    note = st.text_area(
+        "message",
+        value="",
+        placeholder="メッセージを入力してください…",
+        height=60,
+        label_visibility="collapsed",
+    )
 
-    with cols[0]:
-        st.markdown('<div class="upload-composer-tools upload-tool-btn">', unsafe_allow_html=True)
-        toggle = st.button("＋", key="upload_panel_btn_toggle_uploader", help="添付を表示/非表示")
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.write("")  # スペース
 
+    # 2行目: ボタン横並び
+    btn_cols = st.columns(2)
+    with btn_cols[0]:
+        toggle = st.button("＋ 添付", key="upload_panel_btn_toggle_uploader", help="添付を表示/非表示", use_container_width=True)
         if toggle:
             st.session_state[show_uploader_key] = not st.session_state[show_uploader_key]
 
-    with cols[1]:
-        note = st.text_area(
-            "message",
-            value="",
-            placeholder="メッセージを入力してください…",
-            height=86,
-            label_visibility="collapsed",
-        )
-
-    with cols[2]:
-        st.markdown('<div class="upload-composer-send upload-send-btn">', unsafe_allow_html=True)
-
+    with btn_cols[1]:
         files_for_disable = st.session_state.get("upload_panel_files_cache", None)
         disabled_send = not bool(files_for_disable)
-
         save_clicked = st.button(
-            "⬆︎",
+            "⬆︎ 保存",
             key="upload_panel_btn_save",
             help="保存（この会話に紐づけ）",
             disabled=disabled_send,
+            use_container_width=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.write("")  # スペース
 
-    # -----------------------------
-    # Attachment picker (toggleable)
-    # -----------------------------
-    files = None
     if st.session_state[show_uploader_key]:
         files = st.file_uploader(
             "files",
@@ -170,16 +248,11 @@ div[data-testid="stFileUploader"] section {
     else:
         files = []
 
-    # Keep latest selection for disabling/enabling send button
     st.session_state["upload_panel_files_cache"] = files
 
-    # Guidance below composer (small)
     if not files:
         st.caption("＋で添付を選ぶと、⬆︎で保存できます。")
 
-    # -----------------------------
-    # Save logic (unchanged behavior)
-    # -----------------------------
     if save_clicked:
         ok = 0
         ng = 0
@@ -202,9 +275,6 @@ div[data-testid="stFileUploader"] section {
         if ng:
             st.warning(f"失敗: {ng}件")
 
-    # -----------------------------
-    # List artifacts (unchanged)
-    # -----------------------------
     items = artifact_store.list_artifacts(conversation_id, limit=200)
     if not items:
         st.caption("まだ添付はありません。")
@@ -219,9 +289,24 @@ div[data-testid="stFileUploader"] section {
             st.caption(f"mime: {a.mime_type}")
             st.caption(f"sha256: {a.sha256}")
 
+            meta_text = (
+                f"filename: {a.filename}\n"
+                f"size_bytes: {a.size_bytes}\n"
+                f"mime: {a.mime_type}\n"
+                f"sha256: {a.sha256}\n"
+                f"artifact_id: {a.artifact_id}\n"
+            )
+            _clipboard_button("📋 メタ情報をコピー", meta_text, key=f"copy_meta_{a.artifact_id}")
+
             data = artifact_store.get_artifact_bytes(a.artifact_id)
             if a.mime_type.startswith("image/"):
                 st.image(data, caption=a.filename, use_container_width=True)
+
+            text = _try_decode_text(data, a.mime_type)
+            if text is not None:
+                clipped = text[:200_000]
+                _clipboard_button("📋 内容をコピー（先頭20万文字）", clipped, key=f"copy_text_{a.artifact_id}")
+                st.code(clipped[:5_000], language="")
 
             st.download_button(
                 "⬇️ ダウンロード",
