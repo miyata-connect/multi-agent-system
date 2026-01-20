@@ -20,7 +20,6 @@ from core import code_with_review_loop, cross_check, generate_crosscheck_summary
 from failure_tracker import FailureTracker
 from failure_analyzer import FailureAnalyzer
 from learning_integrator import LearningSkillsIntegrator
-from skills_downloader import SkillsDownloader
 
 from core.artifact_store import ArtifactStore
 from ui.upload_panel import render_upload_panel
@@ -52,10 +51,6 @@ def get_failure_analyzer():
 def get_learning_integrator():
     analyzer = get_failure_analyzer()
     return LearningSkillsIntegrator(analyzer)
-
-@st.cache_resource
-def get_skills_downloader():
-    return SkillsDownloader()
 
 @st.cache_resource
 def get_artifact_store():
@@ -702,42 +697,10 @@ with st.sidebar:
     
     st.divider()
     
-    # Skillsダウンロード・管理
-    st.header("📚 Skillsライブラリ")
-    try:
-        downloader = get_skills_downloader()
-        stats = downloader.get_stats()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("ダウンロード済", f"{stats['total_downloaded_skills']}件")
-        with col2:
-            st.metric("使用回数", f"{stats['total_usages']}回")
-        
-        if stats['total_usages'] > 0:
-            st.caption(f"成功率: {stats['success_rate']}% / 品質: {stats['avg_quality_score']}点")
-        
-        # ダウンロードUI
-        with st.expander("🔽 Skills検索・ダウンロード", expanded=False):
-            search_query = st.text_input("検索キーワード", placeholder="日本語OK！例: 認証処理, langchain, error handling")
-            download_count = st.slider("ダウンロード数", 5, 50, 10)
-            
-            if st.button("🔍 GitHubからSkillsを取得", use_container_width=True):
-                with st.spinner(f"GitHubでSKILL.mdを検索中..."):
-                    downloaded = downloader.smart_batch_download(search_query, max_skills=download_count)
-                    if downloaded:
-                        st.success(f"✅ {len(downloaded)}件のSkillsをダウンロードしました")
-                    else:
-                        st.info("新規Skillsは見つかりませんでした")
-        
-        # 人気Skills表示
-        top_skills = downloader.get_top_skills(limit=3)
-        if top_skills:
-            st.write("🏆 よく使うSkills:")
-            for s in top_skills:
-                st.text(f"• {s['skill_name']} ({s['usage_count']}回)")
-    except Exception as e:
-        st.caption("Skillsデータ準備中...")
+    # Skills Server連携
+    st.header("📚 Skills管理")
+    st.markdown("[🔗 Skills Serverで管理](https://skills-server-a34a4.web.app/)")
+    st.caption("スキルのアップロード・検索はSkills Serverで行ってください")
     
     st.divider()
     

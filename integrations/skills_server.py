@@ -1,18 +1,28 @@
 # integrations/skills_server.py
-# Skills Server API連携モジュール
+# Skills Server API連携モジュール（読み取り専用）
 
 import requests
 from typing import Optional, List, Dict
+import streamlit as st
 
 SKILLS_SERVER_API = "https://api-shdzav64xq-an.a.run.app"
 
 
 class SkillsServerClient:
-    """Skills Server APIクライアント"""
+    """Skills Server APIクライアント（読み取り専用）"""
     
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key
+        self.api_key = api_key or self._get_api_key_from_secrets()
         self.base_url = SKILLS_SERVER_API
+    
+    def _get_api_key_from_secrets(self) -> Optional[str]:
+        """Streamlit SecretsからAPI Keyを取得"""
+        try:
+            if hasattr(st, 'secrets') and 'SKILLS_API_KEY' in st.secrets:
+                return st.secrets['SKILLS_API_KEY']
+        except Exception:
+            pass
+        return None
     
     def _headers(self) -> Dict:
         headers = {"Content-Type": "application/json"}
@@ -23,78 +33,73 @@ class SkillsServerClient:
     def get_public_skills(self) -> List[Dict]:
         """公開スキル一覧を取得"""
         try:
-            resp = requests.get(
-                f"{self.base_url}/skills/list",
+            response = requests.get(
+                f"{self.base_url}/skills",
                 headers=self._headers(),
                 timeout=10
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("skills", [])
-            return []
+            if response.status_code == 200:
+                return response.json().get("skills", [])
         except Exception as e:
-            print(f"Skills Server error: {e}")
-            return []
+            print(f"公開スキル取得エラー: {e}")
+        return []
     
     def get_user_skills(self) -> List[Dict]:
-        """ユーザースキル一覧を取得（API Key必須）"""
+        """マイスキル一覧を取得（API Key認証必須）"""
         if not self.api_key:
             return []
+        
         try:
-            resp = requests.get(
-                f"{self.base_url}/user-skills/list",
+            response = requests.get(
+                f"{self.base_url}/user-skills",
                 headers=self._headers(),
                 timeout=10
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("skills", [])
-            return []
+            if response.status_code == 200:
+                return response.json().get("skills", [])
         except Exception as e:
-            print(f"Skills Server error: {e}")
-            return []
+            print(f"マイスキル取得エラー: {e}")
+        return []
     
-    def get_skill_content(self, skill_name: str, is_public: bool = True) -> Optional[str]:
-        """スキルの内容を取得"""
+    def get_skill_content(self, skill_name: str, is_user_skill: bool = False) -> Optional[str]:
+        """スキル内容を取得"""
         try:
-            endpoint = "/skills/get" if is_public else "/user-skills/get"
-            resp = requests.get(
-                f"{self.base_url}{endpoint}/{skill_name}",
+            endpoint = f"/user-skills/{skill_name}" if is_user_skill else f"/skills/{skill_name}"
+            response = requests.get(
+                f"{self.base_url}{endpoint}",
                 headers=self._headers(),
                 timeout=10
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("content", "")
-            return None
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("content") or data.get("skill", {}).get("content")
         except Exception as e:
-            print(f"Skills Server error: {e}")
-            return None
+            print(f"スキル内容取得エラー: {e}")
+        return None
     
-    def search_skills(self, query: str) -> List[Dict]:
-        """スキルを検索"""
-        try:
-            resp = requests.get(
-                f"{self.base_url}/skills/search",
-                params={"q": query},
-                headers=self._headers(),
-                timeout=10
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("skills", [])
-            return []
-        except Exception as e:
-            print(f"Skills Server error: {e}")
-            return []
+    def get_all_skills(self) -> List[Dict]:
+        """公開スキル + マイスキルを統合取得"""
+        public = self.get_public_skills()
+        user = self.get_user_skills()
+        
+        # マイスキルにフラグを付与
+        for skill in user:
+            skill["is_user_skill"] = True
+        
+        return public + user
     
-    def test_connection(self) -> bool:
-        """接続テスト"""
+    def is_connected(self) -> bool:
+        """API接続確認"""
         try:
-            resp = requests.get(
-                f"{self.base_url}/health",
+            response = requests.get(
+                f"{self.base_url}/skills",
                 timeout=5
             )
-            return resp.status_code == 200
-        except:
+            return response.status_code == 200
+        except Exception:
             return False
+
+
+def get_skills_client() -> SkillsServerClient:
+    """キャッシュ付きクライアント取得"""
+    return SkillsServerClient()
