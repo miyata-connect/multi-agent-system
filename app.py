@@ -15,7 +15,7 @@ from agents.coder_team import CoderTeam
 from agents.auditor_team import AuditorTeam
 from agents.data_team import DataTeam
 from agents.searcher_team import SearcherTeam
-from agents.concierge import Concierge
+from agents.concierge import ConciergeTeam as Concierge
 from core import code_with_review_loop, cross_check, generate_crosscheck_summary
 from failure_tracker import FailureTracker
 from failure_analyzer import FailureAnalyzer
