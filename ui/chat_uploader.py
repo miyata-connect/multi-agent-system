@@ -1,5 +1,4 @@
 # ui/chat_uploader.py
-# 行数: 98行
 # チャット用ファイルアップロードUI（ChatGPT風コンパクト版）
 
 import streamlit as st
@@ -42,21 +41,16 @@ def format_file_size(size_bytes: int) -> str:
 
 
 def render_chat_uploader():
-    """ChatGPT風コンパクトアップロードUI"""
+    """ChatGPT風コンパクトアップロードUI - 入力欄の左に配置"""
     
     if "chat_uploaded_files" not in st.session_state:
         st.session_state.chat_uploaded_files = []
     
-    # 添付済みファイルがあれば表示（コンパクト）
-    if st.session_state.chat_uploaded_files:
-        file_chips = []
-        for f in st.session_state.chat_uploaded_files:
-            icon = get_file_icon(f['name'])
-            file_chips.append(f"{icon}{f['name'][:12]}{'...' if len(f['name']) > 12 else ''}")
-        st.caption(f"📎 {' | '.join(file_chips)}")
-    
     # ポップオーバーでアップロードUI
-    with st.popover("📎", help="ファイルを添付"):
+    with st.popover("📎 添付", help="ファイルを添付", use_container_width=False):
+        # 対応ファイル形式
+        st.caption("対応形式: JPEG, PNG, CSV, XLSX, CSS, WEBM, HTML, YAML, PDF, DOCX 等")
+        
         uploaded_files = st.file_uploader(
             "ファイルを選択",
             type=list(ALLOWED_EXTENSIONS),
@@ -92,6 +86,14 @@ def render_chat_uploader():
                     if st.button("✕", key=f"rm_{i}"):
                         st.session_state.chat_uploaded_files.pop(i)
                         st.rerun()
+    
+    # 添付済みファイルがあれば下に表示
+    if st.session_state.chat_uploaded_files:
+        file_chips = []
+        for f in st.session_state.chat_uploaded_files:
+            icon = get_file_icon(f['name'])
+            file_chips.append(f"{icon}{f['name'][:15]}{'...' if len(f['name']) > 15 else ''}")
+        st.caption(f"📎 添付: {' | '.join(file_chips)}")
 
 
 def get_uploaded_files_for_prompt() -> str:

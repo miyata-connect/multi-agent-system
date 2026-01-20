@@ -748,10 +748,8 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=message.get("avatar")):
         st.markdown(message["content"])
 
-# チャット用ファイルアップロードUI（コンパクト）
-col_attach, col_spacer = st.columns([1, 20])
-with col_attach:
-    render_chat_uploader()
+# チャット用ファイルアップロードUI（入力欄の上に配置）
+render_chat_uploader()
 
 # ユーザー入力
 if prompt := st.chat_input("メッセージを入力してください..."):
