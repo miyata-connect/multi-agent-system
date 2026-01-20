@@ -1,6 +1,6 @@
 # Multi-Agent System Dependencies
 # Streamlit Cloud対応版
-# 更新日: 2026-01-16
+# 更新日: 2026-01-21
 
 # Streamlit
 streamlit>=1.40.0
@@ -17,3 +17,6 @@ langchain-groq>=0.2.0
 
 # Utilities
 python-dotenv>=1.0.0
+
+# Firebase (Mac操作連携用)
+firebase-admin>=6.0.0

@@ -27,6 +27,14 @@ from ui.upload_panel import render_upload_panel
 from ui.parts_panel import render_parts_panel
 from ui.chat_uploader import render_chat_uploader, get_uploaded_files_for_prompt, clear_uploaded_files
 
+# Mac操作連携
+try:
+    from integrations.firebase_mac import render_mac_control_panel, FIREBASE_AVAILABLE
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    def render_mac_control_panel():
+        pass
+
 # ==========================================
 # Failure Tracking初期化
 # ==========================================
@@ -730,6 +738,14 @@ with st.sidebar:
                 st.text(f"• {s['skill_name']} ({s['usage_count']}回)")
     except Exception as e:
         st.caption("Skillsデータ準備中...")
+    
+    st.divider()
+    
+    # Mac操作パネル
+    try:
+        render_mac_control_panel()
+    except Exception as e:
+        st.caption(f"Mac操作パネル準備中... {e}")
     
 
 
