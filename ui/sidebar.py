@@ -13,6 +13,13 @@ from ui.file_history_panel import render_file_history_panel
 def render_sidebar(artifact_store):
     """サイドバー全体をレンダリング"""
     with st.sidebar:
+        # 設定ボタン（最上部）
+        if st.button("⚙️ 設定を開く", key="sidebar_top_settings", use_container_width=True, type="primary"):
+            from ui.tabs import add_tab
+            add_tab("settings")
+            st.rerun()
+        st.divider()
+        
         # 会話履歴
         render_conversation_history()
         st.divider()
@@ -158,11 +165,6 @@ def _render_team_scores(ai_names):
 
 def _render_quick_settings():
     """簡易設定"""
-    if st.button("⚙️ 設定を開く", key="sidebar_open_settings", use_container_width=True):
-        from ui.tabs import add_tab
-        add_tab("settings")
-        st.rerun()
-    
     st.markdown("🔄 **コードレビューループ**")
     use_loop = st.toggle("ループ", value=st.session_state.use_loop, key="sidebar_use_loop", label_visibility="collapsed")
     st.session_state.use_loop = use_loop
