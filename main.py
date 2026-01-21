@@ -6,7 +6,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tools import call_auditor, call_coder, call_data_processor
+from tools import call_auditor, call_coder, call_data_processor, set_cross_context
+from conversation_memory import memory
+from past_threads_loader import initialize_memory_system
+from three_stage_search import search_engine
+from firebase_history_manager import get_firebase_manager
+from cross_context_manager import cross_context
 
 # 環境変数を読み込む
 load_dotenv()
@@ -81,6 +86,12 @@ def main():
     print("   🦙 データ役: Llama 3.3 70B (Groq)")
     print("=" * 60)
     print("終了するには 'exit' または 'quit' と入力してください。\n")
+    
+    # 🧠 会話記憶システム初期化（直近10件ロード）
+    try:
+        initialize_memory_system()
+    except Exception as e:
+        print(f"⚠️ 記憶システム初期化エラー（続行可能）: {e}\n")
 
     while True:
         try:
@@ -97,15 +108,58 @@ def main():
 
             print("\n⏳ Gemini 3 Proが思考中... 必要な部下を選定しています...\n")
             
+            # 🧠 3段階記憶検索
+            search_result = search_engine.search(user_input)
+            
+            # 🤝 クロスコンテキスト生成（全AIが文脈共有）
+            cross_context_data = cross_context.build_cross_context(search_result)
+            
+            # 🔄 tools.pyにクロスコンテキストを設定（全AIが参照可能に）
+            set_cross_context(cross_context_data)
+            
+            # Gemini用にフォーマット
+            gemini_context = cross_context.format_for_gemini(cross_context_data)
+            
+            # ユーザーメッセージを記憶に追加
+            memory.add_session_message('user', user_input)
+            
+            # 記憶を含めたプロンプト作成
+            enhanced_prompt = f"""
+【チーム全体の文脈】
+{gemini_context}
+
+【現在のユーザー質問】
+{user_input}
+"""
+            
             # エージェント実行
             result = agent_executor.invoke({
-                "messages": [HumanMessage(content=user_input)]
+                "messages": [HumanMessage(content=enhanced_prompt)]
             })
             
             # 最終回答を取得
             final_message = result["messages"][-1]
             if hasattr(final_message, 'content') and final_message.content:
                 print(f"🤖 Gemini: {final_message.content}\n")
+                
+                # 🧠 Geminiの回答を記憶に追加
+                memory.add_session_message('assistant', final_message.content, 'Gemini')
+                
+                # 💾 Firebaseにセッション保存
+                try:
+                    firebase = get_firebase_manager()
+                    # 各AIの呼び出し情報を収集（実装簡略化版）
+                    session_data = {
+                        'userInput': user_input,
+                        'geminiResponse': final_message.content,
+                        'auditorCalls': [],  # tools.pyから収集する場合は別途実装
+                        'coderCalls': [],
+                        'dataCalls': []
+                    }
+                    firebase.save_session(session_data)
+                    print("✅ セッションをFirebaseに保存しました")
+                except Exception as e:
+                    print(f"⚠️ Firebase保存エラー: {e}")
 
         except KeyboardInterrupt:
             print("\n👋 中断されました。システムを終了します。")

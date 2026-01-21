@@ -20,3 +20,7 @@ python-dotenv>=1.0.0
 
 # Firebase (Mac操作連携用)
 firebase-admin>=6.0.0
+
+# ブラウザタブ用
+beautifulsoup4>=4.12.0
+requests>=2.31.0

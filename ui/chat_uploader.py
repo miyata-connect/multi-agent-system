@@ -5,6 +5,7 @@ import streamlit as st
 from pathlib import Path
 from typing import List
 import mimetypes
+import uuid
 
 
 ALLOWED_EXTENSIONS = {
@@ -68,7 +69,10 @@ def render_chat_uploader():
                 
                 existing = [f['name'] for f in st.session_state.chat_uploaded_files]
                 if file.name not in existing:
+                    # 一意のIDを付与
+                    file_id = uuid.uuid4().hex[:8]
                     st.session_state.chat_uploaded_files.append({
+                        'id': file_id,
                         'name': file.name,
                         'size': file_size,
                         'type': file.type or mimetypes.guess_type(file.name)[0],
@@ -78,22 +82,45 @@ def render_chat_uploader():
         # 添付済み一覧
         if st.session_state.chat_uploaded_files:
             st.markdown("**添付済み:**")
-            for i, f in enumerate(st.session_state.chat_uploaded_files):
+            files_to_remove = []
+            for f in st.session_state.chat_uploaded_files:
                 col1, col2 = st.columns([4, 1])
                 with col1:
                     st.caption(f"{get_file_icon(f['name'])} {f['name']} ({format_file_size(f['size'])})")
                 with col2:
-                    if st.button("✕", key=f"rm_{i}"):
-                        st.session_state.chat_uploaded_files.pop(i)
-                        st.rerun()
+                    # 一意のkeyを使用
+                    if st.button("✕", key=f"rm_file_{f['id']}"):
+                        files_to_remove.append(f['id'])
+            
+            # 削除処理
+            if files_to_remove:
+                st.session_state.chat_uploaded_files = [
+                    f for f in st.session_state.chat_uploaded_files 
+                    if f['id'] not in files_to_remove
+                ]
+                st.rerun()
     
-    # 添付済みファイルがあれば下に表示
+    # 添付済みファイルがあれば下に表示（削除ボタン付き）
     if st.session_state.chat_uploaded_files:
-        file_chips = []
+        st.markdown("---")
+        st.caption("📎 **添付ファイル:**")
+        files_to_remove = []
         for f in st.session_state.chat_uploaded_files:
-            icon = get_file_icon(f['name'])
-            file_chips.append(f"{icon}{f['name'][:15]}{'...' if len(f['name']) > 15 else ''}")
-        st.caption(f"📎 添付: {' | '.join(file_chips)}")
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                icon = get_file_icon(f['name'])
+                st.markdown(f"{icon} **{f['name']}** ({format_file_size(f['size'])})")
+            with col2:
+                if st.button("❌", key=f"remove_attached_{f['id']}", help="削除"):
+                    files_to_remove.append(f['id'])
+        
+        # 削除処理
+        if files_to_remove:
+            st.session_state.chat_uploaded_files = [
+                f for f in st.session_state.chat_uploaded_files 
+                if f['id'] not in files_to_remove
+            ]
+            st.rerun()
 
 
 def get_uploaded_files_for_prompt() -> str:
