@@ -15,6 +15,24 @@ data/app.db
 data/app.db-wal
 data/app.db-shm
 
+# File version management databases
+data/file_versions.db
+data/file_versions.db-wal
+data/file_versions.db-shm
+
+# Conversation memory databases
+data/conversation_memory.db
+data/conversation_memory.db-wal
+data/conversation_memory.db-shm
+
+# Team evaluation databases
+data/team_evaluations.db
+data/team_evaluations.db-wal
+data/team_evaluations.db-shm
+
+# Firebase service account keys (SENSITIVE)
+service-account-key.json
+
 # local backups / handoff outputs (do not commit)
 *.bak_*
 handoff_project.txt
