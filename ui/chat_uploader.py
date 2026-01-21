@@ -17,7 +17,7 @@ ALLOWED_EXTENSIONS = {
     'py', 'js', 'ts', 'html', 'css', 'sql', 'yaml', 'yml',
 }
 
-MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_MB = 1024  # 1GB
 
 
 def get_file_icon(filename: str) -> str:
