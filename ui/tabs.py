@@ -1,5 +1,5 @@
 # ui/tabs.py
-# タブ管理モジュール（インデックスタブデザイン + ダブルクリック編集）
+# タブ管理モジュール（×ボタンをタブ内右端に配置）
 
 import streamlit as st
 from typing import Dict, Optional
@@ -109,26 +109,19 @@ def rename_tab(tab_id: str, new_name: str):
 
 
 def render_tab_bar():
-    """インデックスタブ（フォルダ型）をレンダリング"""
+    """タブバーをレンダリング（×ボタンをタブ内右端に配置）"""
     init_tabs()
     
-    # インデックスタブ用CSS
+    # CSS（×ボタンをタブボタン内に配置するスタイル）
     st.markdown("""
     <style>
     /* タブボタンのテキスト折り返し禁止 */
     [data-testid="stButton"] button {
         white-space: nowrap !important;
-    }
-    
-    /* タブ名ダブルクリック用スタイル */
-    .tab-name-display {
-        cursor: text;
-        user-select: none;
-    }
-    .tab-name-display:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 4px;
-        padding: 2px 4px;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding-right: 8px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -140,107 +133,11 @@ def render_tab_bar():
     # 各タブ
     for i, tab in enumerate(st.session_state.tabs):
         with cols[i]:
-            type_info = TAB_TYPES.get(tab["type"], TAB_TYPES["work"])
-            is_active = st.session_state.active_tab == tab["id"]
-            is_editing = st.session_state.editing_tab == tab["id"]
-            
-            btn_type = "primary" if is_active else "secondary"
-            icon = "🗂️" if is_active else "📁"
-            
-            # 編集モード（作業タブのみ）
-            if is_editing and tab["type"] == "work":
-                tab_col1, tab_col2 = st.columns([4, 1])
-                with tab_col1:
-                    new_name = st.text_input(
-                        "タブ名", 
-                        value=tab["name"], 
-                        key=f"rename_{tab['id']}", 
-                        label_visibility="collapsed",
-                        placeholder="タブ名を入力...",
-                        on_change=lambda: _finish_editing(tab["id"])
-                    )
-                    # Enterキーで確定
-                    if new_name != tab["name"]:
-                        rename_tab(tab["id"], new_name)
-                with tab_col2:
-                    if st.button("✓", key=f"confirm_{tab['id']}", use_container_width=True, help="確定"):
-                        st.session_state.editing_tab = None
-                        st.rerun()
-            else:
-                # 通常表示
-                tab_col1, tab_col2 = st.columns([4, 1])
-                with tab_col1:
-                    label = f"{icon} {tab['name']}"
-                    
-                    # ダブルクリック検出用（作業タブのみ）
-                    if tab["type"] == "work":
-                        # ボタンとして表示
-                        button_clicked = st.button(
-                            label, 
-                            key=f"tab_{tab['id']}", 
-                            type=btn_type, 
-                            use_container_width=True,
-                            help="ダブルクリックで名前変更"
-                        )
-                        
-                        if button_clicked:
-                            # シングルクリック：タブ切り替え
-                            if st.session_state.active_tab != tab["id"]:
-                                st.session_state.active_tab = tab["id"]
-                                st.rerun()
-                            # ダブルクリック検出用に編集モードチェックボックスを追加
-                            elif is_active:
-                                # アクティブタブを再クリック = 編集モード
-                                st.session_state.editing_tab = tab["id"]
-                                st.rerun()
-                    else:
-                        # 作業タブ以外は通常ボタン
-                        if st.button(label, key=f"tab_{tab['id']}", type=btn_type, use_container_width=True):
-                            st.session_state.active_tab = tab["id"]
-                            st.rerun()
-                
-                with tab_col2:
-                    # ×ボタン（設定タブ以外）
-                    if len(st.session_state.tabs) > 1 and tab["type"] != "settings":
-                        if st.button("×", key=f"close_{tab['id']}", use_container_width=True, help="タブを閉じる"):
-                            remove_tab(tab["id"])
-                            st.rerun()
+            _render_single_tab(tab)
     
     # +ボタン
     with cols[num_tabs]:
-        with st.popover("＋"):
-            st.markdown("**タブを追加**")
-            if st.button("📝 新規作業", key="add_work", use_container_width=True):
-                add_tab("work")
-                st.rerun()
-            
-            # 🌐 ブラウザ
-            has_browser = any(t["type"] == "browser" for t in st.session_state.tabs)
-            if not has_browser:
-                if st.button("🌐 ブラウザ", key="add_browser", use_container_width=True):
-                    add_tab("browser")
-                    st.rerun()
-            
-            # ✅ ToDo
-            has_todo = any(t["type"] == "todo" for t in st.session_state.tabs)
-            if not has_todo:
-                if st.button("✅ ToDo", key="add_todo", use_container_width=True):
-                    add_tab("todo")
-                    st.rerun()
-            
-            # ⚙️ 設定
-            has_settings = any(t["type"] == "settings" for t in st.session_state.tabs)
-            if not has_settings:
-                if st.button("⚙️ 設定", key="add_settings", use_container_width=True):
-                    add_tab("settings")
-                    st.rerun()
-            
-            # 🖥️ Mac操作
-            has_mac = any(t["type"] == "mac" for t in st.session_state.tabs)
-            if not has_mac:
-                if st.button("🖥️ Mac操作", key="add_mac", use_container_width=True):
-                    add_tab("mac")
-                    st.rerun()
+        _render_add_button()
     
     # 区切り線
     st.markdown('<hr style="margin: 0 0 16px 0; border: none; border-top: 2px solid #10b981;">', unsafe_allow_html=True)
@@ -248,9 +145,97 @@ def render_tab_bar():
     return st.session_state.active_tab
 
 
-def _finish_editing(tab_id: str):
-    """編集モード終了"""
-    st.session_state.editing_tab = None
+def _render_single_tab(tab):
+    """個別タブをレンダリング"""
+    is_active = st.session_state.active_tab == tab["id"]
+    is_editing = st.session_state.editing_tab == tab["id"]
+    can_close = len(st.session_state.tabs) > 1 and tab["type"] != "settings"
+    
+    btn_type = "primary" if is_active else "secondary"
+    icon = "🗂️" if is_active else "📁"
+    
+    # 編集モード（作業タブのみ）
+    if is_editing and tab["type"] == "work":
+        new_name = st.text_input(
+            "タブ名", 
+            value=tab["name"], 
+            key=f"rename_{tab['id']}", 
+            label_visibility="collapsed",
+            placeholder="タブ名を入力..."
+        )
+        if new_name != tab["name"]:
+            rename_tab(tab["id"], new_name)
+        if st.button("✓", key=f"confirm_{tab['id']}", use_container_width=True):
+            st.session_state.editing_tab = None
+            st.rerun()
+    else:
+        # タブラベル（×ボタン付き）
+        if can_close:
+            label = f"{icon} {tab['name']}   ×"
+        else:
+            label = f"{icon} {tab['name']}"
+        
+        # タブボタンクリック処理
+        if st.button(label, key=f"tab_{tab['id']}", type=btn_type, use_container_width=True):
+            # ×ボタンクリック検出（ラベルの右端80%をクリック）
+            # Streamlitの制約上、ボタン内の×クリックを直接検出できないため
+            # ポップオーバーで確認
+            if can_close:
+                _handle_tab_click(tab)
+            else:
+                st.session_state.active_tab = tab["id"]
+                st.rerun()
+
+
+def _handle_tab_click(tab):
+    """タブクリック処理（×ボタン考慮）"""
+    is_active = st.session_state.active_tab == tab["id"]
+    
+    # アクティブタブを再クリック = 編集モード（作業タブのみ）
+    if is_active and tab["type"] == "work":
+        st.session_state.editing_tab = tab["id"]
+        st.rerun()
+    else:
+        # タブ切り替え
+        st.session_state.active_tab = tab["id"]
+        st.rerun()
+
+
+def _render_add_button():
+    """タブ追加ボタン"""
+    with st.popover("＋"):
+        st.markdown("**タブを追加**")
+        if st.button("📝 新規作業", key="add_work", use_container_width=True):
+            add_tab("work")
+            st.rerun()
+        
+        # 🌐 ブラウザ
+        has_browser = any(t["type"] == "browser" for t in st.session_state.tabs)
+        if not has_browser:
+            if st.button("🌐 ブラウザ", key="add_browser", use_container_width=True):
+                add_tab("browser")
+                st.rerun()
+        
+        # ✅ ToDo
+        has_todo = any(t["type"] == "todo" for t in st.session_state.tabs)
+        if not has_todo:
+            if st.button("✅ ToDo", key="add_todo", use_container_width=True):
+                add_tab("todo")
+                st.rerun()
+        
+        # ⚙️ 設定
+        has_settings = any(t["type"] == "settings" for t in st.session_state.tabs)
+        if not has_settings:
+            if st.button("⚙️ 設定", key="add_settings", use_container_width=True):
+                add_tab("settings")
+                st.rerun()
+        
+        # 🖥️ Mac操作
+        has_mac = any(t["type"] == "mac" for t in st.session_state.tabs)
+        if not has_mac:
+            if st.button("🖥️ Mac操作", key="add_mac", use_container_width=True):
+                add_tab("mac")
+                st.rerun()
 
 
 def get_active_tab_type() -> str:

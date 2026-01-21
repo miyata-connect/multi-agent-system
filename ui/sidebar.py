@@ -1,5 +1,5 @@
 # ui/sidebar.py
-# サイドバーの実装
+# サイドバーの実装（設定ボタンを緑色に）
 # 行数: 200行
 
 import streamlit as st
@@ -13,8 +13,8 @@ from ui.file_history_panel import render_file_history_panel
 def render_sidebar(artifact_store):
     """サイドバー全体をレンダリング"""
     with st.sidebar:
-        # 設定ボタン（最上部）
-        if st.button("⚙️ 設定を開く", key="sidebar_top_settings", use_container_width=True, type="primary"):
+        # 設定ボタン（最上部・緑色）
+        if st.button("⚙️ 設定を開く", key="sidebar_top_settings", use_container_width=True):
             from ui.tabs import add_tab
             add_tab("settings")
             st.rerun()
